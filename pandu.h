@@ -37,6 +37,7 @@ static char PASS_PREFIX[] = "\033[32mPASSED\033[0m";
 static char FAIL_PREFIX[] = "\033[31mFAILED\033[0m";
 
 static const Test NULL_TEST = {.name = NULL, .fn = NULL};
+static const Test ERROR_TEST = {.name = "ERROR", .fn = NULL};
 
 static Stack s = {0};
 
@@ -44,7 +45,12 @@ static Stack s = {0};
  * Push a test to the stack
  * Returns false if op failed, else true
  * */
-static bool push(Test test) {
+static bool push(Stack *stack, Test test) {
+  if (stack == NULL) {
+    fprintf(stderr, "Stack pointer is NULL\n");
+    return false;
+  }
+
   if (test.name == NULL) {
     fprintf(stderr, "Test name is NULL\n");
     return false;
@@ -58,10 +64,10 @@ static bool push(Test test) {
   }
 
   node->test = test;
-  node->next = s.head;
+  node->next = stack->head;
 
-  s.head = node;
-  s.size++;
+  stack->head = node;
+  stack->size++;
 
   return true;
 }
@@ -70,19 +76,24 @@ static bool push(Test test) {
  * Pop test stack in LIFO order
  * If no tests are remaining,
  * then return NULL_TEST sentinel value
+ * Returns ERROR_TEST if the stack pointer is NULL
  * */
-static Test pop(void) {
+static Test pop(Stack *stack) {
+  if (stack == NULL) {
+    fprintf(stderr, "Stack pointer is NULL\n");
+    return ERROR_TEST;
+  }
 
-  if (s.head == NULL) {
+  if (stack->head == NULL) {
     return NULL_TEST;
   }
 
-  StackNode *node = s.head;
-  StackNode *next = s.head->next;
+  StackNode *node = stack->head;
+  StackNode *next = stack->head->next;
 
   Test test = node->test;
-  s.head = next;
-  s.size--;
+  stack->head = next;
+  stack->size--;
 
   free(node);
 
@@ -93,17 +104,25 @@ static Test pop(void) {
  * Peek into stack and return latest test
  *
  * If no test is found then return NULL_TEST
+ * Returns ERROR_TEST if the stack pointer is NULL
  * */
-static Test peek(void) {
-  if (s.head == NULL) {
+static Test peek(const Stack *stack) {
+  if (stack == NULL) {
+    fprintf(stderr, "Stack pointer is NULL\n");
+    return ERROR_TEST;
+  }
+
+  if (stack->head == NULL) {
     return NULL_TEST;
   }
 
-  StackNode *node = s.head;
+  StackNode *node = stack->head;
   Test test = node->test;
 
   return test;
 }
+
+static int getSize(const Stack *stack) { return stack->size; }
 
 bool register_test(test_fn fn, const char *name) {
   if (name == NULL) {
@@ -117,7 +136,7 @@ bool register_test(test_fn fn, const char *name) {
   }
 
   Test t = {.fn = fn, .name = name};
-  if (!push(t)) {
+  if (!push(&s, t)) {
     fprintf(stderr, "Failed to push function %s %s", name, " to the stack\n");
     return false;
   }
@@ -162,9 +181,9 @@ static int fork_and_run_process(Test t) {
 
 int run_all(void) {
   int failures = 0;
-  const int test_count = s.size;
+  const int test_count = getSize(&s);
   for (;;) {
-    Test t = pop();
+    Test t = pop(&s);
     if ((t.name == NULL) || (t.fn == NULL)) {
       break;
     }
