@@ -10,7 +10,7 @@ typedef struct {
 } Test;
 
 bool register_test(test_fn fn, const char *name);
-int run_all();
+int run_all(void);
 #endif // PANDU HEADER END
 
 #if defined(PANDU_IMPL) && !defined(PANDU_IMPL_INCLUDED)
@@ -33,6 +33,9 @@ typedef struct {
   int size;
 } Stack;
 
+static char PASS_PREFIX[] = "\033[32mPASSED\033[0m";
+static char FAIL_PREFIX[] = "\033[31mFAILED\033[0m";
+
 static const Test NULL_TEST = {.name = NULL, .fn = NULL};
 
 static Stack s = {0};
@@ -41,9 +44,9 @@ static Stack s = {0};
  * Push a test to the stack
  * Returns false if op failed, else true
  * */
-static bool push(Stack *stack, Test test) {
-  if (stack == NULL) {
-    fprintf(stderr, "Stack pointer is null\n");
+static bool push(Test test) {
+  if (test.name == NULL) {
+    fprintf(stderr, "Test name is NULL\n");
     return false;
   }
 
@@ -55,10 +58,10 @@ static bool push(Stack *stack, Test test) {
   }
 
   node->test = test;
-  node->next = stack->head;
+  node->next = s.head;
 
-  stack->head = node;
-  stack->size++;
+  s.head = node;
+  s.size++;
 
   return true;
 }
@@ -68,25 +71,36 @@ static bool push(Stack *stack, Test test) {
  * If no tests are remaining,
  * then return NULL_TEST sentinel value
  * */
-static Test pop(Stack *stack) {
-  if (stack == NULL) {
-    fprintf(stderr, "Stack pointer is null\n");
+static Test pop(void) {
+
+  if (s.head == NULL) {
     return NULL_TEST;
   }
 
-  if (stack->head == NULL) {
-    fprintf(stderr, "Stack is empty\n");
-    return NULL_TEST;
-  }
-
-  StackNode *node = stack->head;
-  StackNode *next = stack->head->next;
+  StackNode *node = s.head;
+  StackNode *next = s.head->next;
 
   Test test = node->test;
-  stack->head = next;
-  stack->size--;
+  s.head = next;
+  s.size--;
 
   free(node);
+
+  return test;
+}
+
+/*
+ * Peek into stack and return latest test
+ *
+ * If no test is found then return NULL_TEST
+ * */
+static Test peek(void) {
+  if (s.head == NULL) {
+    return NULL_TEST;
+  }
+
+  StackNode *node = s.head;
+  Test test = node->test;
 
   return test;
 }
@@ -103,14 +117,14 @@ bool register_test(test_fn fn, const char *name) {
   }
 
   Test t = {.fn = fn, .name = name};
-  if (!push(&s, t)) {
+  if (!push(t)) {
     fprintf(stderr, "Failed to push function %s %s", name, " to the stack\n");
     return false;
   }
   return true;
 }
 
-int fork_and_run_process(Test t) {
+static int fork_and_run_process(Test t) {
   fflush(NULL);
   pid_t pid = fork();
 
@@ -146,20 +160,24 @@ int fork_and_run_process(Test t) {
   return -1;
 }
 
-int run_all() {
+int run_all(void) {
   int failures = 0;
+  const int test_count = s.size;
   for (;;) {
-    Test t = pop(&s);
+    Test t = pop();
     if ((t.name == NULL) || (t.fn == NULL)) {
       break;
     }
 
     int result = fork_and_run_process(t);
     if (result != 0) {
-      fprintf(stderr, "Failed to run test %s\n", t.name);
+      printf("%s: %s\n", FAIL_PREFIX, t.name);
       failures++;
+    } else {
+      printf("%s: %s\n", PASS_PREFIX, t.name);
     }
   }
+  printf("%d tests run, %d failed\n", test_count, failures);
   return failures;
 }
 
