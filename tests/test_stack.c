@@ -71,6 +71,34 @@ void check_stack_sentinels(void) {
   assert(ERROR_TEST.name != NULL_TEST.name);
 }
 
+void check_peek_null_stack(void) {
+  Stack stack = {0};
+  Test t = peek(&stack);
+  assert((t.name == NULL) && t.fn == NULL);
+}
+
+void check_repeated_peek(void) {
+  Stack stack = {0};
+  Test t1 = {.fn = dummy_test, .name = "test1"};
+  Test t2 = {.fn = dummy_test, .name = "test2"};
+  Test t3 = {.fn = dummy_test, .name = "test3"};
+
+  push(&stack, t1);
+  push(&stack, t2);
+  push(&stack, t3);
+
+  int before_count = getSize(&stack);
+  printf("before count: %d\n", before_count);
+  for (int i = 0; i < 10; i++) {
+    Test result = peek(&stack);
+    assert(result.fn == t3.fn);
+    assert(result.name == t3.name);
+  }
+
+  assert(before_count == getSize(&stack));
+  assert(cleanStack(&stack) == true);
+}
+
 int main(void) {
   if (!register_test(check_stack_sentinels, "check_stack_sentinels")) {
     return 1;
@@ -89,6 +117,14 @@ int main(void) {
   }
 
   if (!register_test(check_push_one, "check_push_one")) {
+    return 1;
+  }
+
+  if (!register_test(check_peek_null_stack, "check_peek_null_stack")) {
+    return 1;
+  }
+
+  if (!register_test(check_repeated_peek, "check_repeated_peek")) {
     return 1;
   }
 

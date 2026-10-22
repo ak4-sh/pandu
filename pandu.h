@@ -124,6 +124,24 @@ static Test peek(const Stack *stack) {
 
 static int getSize(const Stack *stack) { return stack->size; }
 
+static bool cleanStack(Stack *stack) {
+  if (stack == NULL) {
+    fprintf(stderr, "Stack pointer is NULL\n");
+    return false;
+  }
+  while (getSize(stack) > 0) {
+    Test t = pop(stack);
+    if (t.name == NULL_TEST.name && t.fn == NULL_TEST.fn) {
+      return false;
+    }
+    if (t.name == ERROR_TEST.name && t.fn == ERROR_TEST.fn) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool register_test(test_fn fn, const char *name) {
   if (name == NULL) {
     fprintf(stderr, "NULL passed for test registration\n");
