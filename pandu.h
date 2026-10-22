@@ -35,6 +35,8 @@ typedef struct {
 
 static char PASS_PREFIX[] = "\033[32mPASSED\033[0m";
 static char FAIL_PREFIX[] = "\033[31mFAILED\033[0m";
+static char YELLOW_CODE[] = "\033[1;33m";
+static char RESET_TERM[] = "\033[0m";
 
 static const Test NULL_TEST = {.name = NULL, .fn = NULL};
 static const Test ERROR_TEST = {.name = "ERROR", .fn = NULL};
@@ -106,7 +108,7 @@ static Test pop(Stack *stack) {
  * If no test is found then return NULL_TEST
  * Returns ERROR_TEST if the stack pointer is NULL
  * */
-static Test peek(const Stack *stack) {
+static inline Test peek(const Stack *stack) {
   if (stack == NULL) {
     fprintf(stderr, "Stack pointer is NULL\n");
     return ERROR_TEST;
@@ -122,9 +124,9 @@ static Test peek(const Stack *stack) {
   return test;
 }
 
-static int getSize(const Stack *stack) { return stack->size; }
+static inline int getSize(const Stack *stack) { return stack->size; }
 
-static bool cleanStack(Stack *stack) {
+static inline bool cleanStack(Stack *stack) {
   if (stack == NULL) {
     fprintf(stderr, "Stack pointer is NULL\n");
     return false;
@@ -213,10 +215,10 @@ int run_all(void) {
 
     int result = fork_and_run_process(t);
     if (result != 0) {
-      printf("%s: %s\n", FAIL_PREFIX, t.name);
+      printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, FAIL_PREFIX);
       failures++;
     } else {
-      printf("%s: %s\n", PASS_PREFIX, t.name);
+      printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, PASS_PREFIX);
     }
   }
   printf("%d tests run, %d failed\n", test_count, failures);

@@ -88,7 +88,6 @@ void check_repeated_peek(void) {
   push(&stack, t3);
 
   int before_count = getSize(&stack);
-  printf("before count: %d\n", before_count);
   for (int i = 0; i < 10; i++) {
     Test result = peek(&stack);
     assert(result.fn == t3.fn);
