@@ -32,9 +32,9 @@ All test executables run even if one fails, and `make test` fails if any executa
 fails. GitHub Actions runs the same command with GCC and Clang on Ubuntu for
 pushes and pull requests.
 
-## Pre-commit hook
+## Local Git hooks
 
-Enable the repository's hook once per checkout:
+Enable the repository's hooks once per checkout:
 
 ```sh
 git config --local core.hooksPath .githooks
@@ -43,4 +43,8 @@ git config --local core.hooksPath .githooks
 Before each commit, the hook rebuilds and runs all tests with `make -B test`.
 A build or test failure blocks the commit. It tests the current working tree,
 including unstaged changes; stage the changes you intend to commit.
+
+Before each push, the pre-push hook also rebuilds and runs all tests with
+`make -B test`. A build or test failure blocks the push. It tests the current
+working tree, including uncommitted changes.
 
