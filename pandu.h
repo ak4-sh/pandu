@@ -181,7 +181,12 @@ static int fork_and_run_process(Test t) {
     // parent
     int status;
 
-    if (waitpid(pid, &status, 0) == -1) {
+    pid_t waited;
+    do {
+      waited = waitpid(pid, &status, 0);
+    } while (waited == -1 && errno == EINTR);
+
+    if (waited == -1) {
       perror("Waitpid failed");
       return -1;
     }
