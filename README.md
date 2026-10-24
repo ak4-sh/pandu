@@ -7,6 +7,8 @@ It is provided as a single header file.
 ## Building and testing
 
 Tests require Make and a C23 compiler on a POSIX system (Linux or macOS).
+The Makefile uses `-std=c23` when supported and falls back to the older
+`-std=c2x` spelling otherwise.
 
 ```sh
 make           # Build all test executables in build/
