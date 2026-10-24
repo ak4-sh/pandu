@@ -19,6 +19,7 @@ int run_all(void);
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -163,9 +164,26 @@ bool register_test(test_fn fn, const char *name) {
     return false;
   }
 
-  Test t = {.fn = fn, .name = name};
+  const size_t BUFF_SIZE = strlen(name) + 1;
+  const char *local_cpy = NULL;
+
+  {
+    char *tmp = malloc(BUFF_SIZE);
+
+    if (tmp == NULL) {
+      perror("malloc");
+      return false;
+    }
+
+    memcpy(tmp, name, BUFF_SIZE);
+
+    local_cpy = tmp;
+  }
+
+  Test t = {.fn = fn, .name = local_cpy};
   if (!push(&s, t)) {
     fprintf(stderr, "Failed to push function %s %s", name, " to the stack\n");
+    free((void *)local_cpy);
     return false;
   }
   return true;
@@ -228,6 +246,8 @@ int run_all(void) {
     } else {
       printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, PASS_PREFIX);
     }
+
+    free((void *)t.name);
   }
   printf("%d tests run, %d failed\n", test_count, failures);
   return failures;
