@@ -36,11 +36,11 @@ void check_peek_decrement(void) {
   assert(push(&stack, t2));
   assert(push(&stack, t3));
 
-  assert(getSize(&stack) == 3);
+  assert(get_size(&stack) == 3);
 
   Test t = peek(&stack);
   assert((t.name == t3.name) && (t.fn == t3.fn));
-  assert(getSize(&stack) == 3);
+  assert(get_size(&stack) == 3);
 
   pop(&stack);
   pop(&stack);
@@ -51,7 +51,7 @@ void check_push_one(void) {
   Stack stack = {0};
   Test t = {.fn = dummy_test, .name = "test"};
   assert(push(&stack, t) == true);
-  assert(getSize(&stack) == 1);
+  assert(get_size(&stack) == 1);
   pop(&stack);
 }
 
@@ -62,7 +62,7 @@ void check_stack_sentinels(void) {
   assert(t.name == NULL_TEST.name && t.fn == NULL_TEST.fn);
   t = peek(&stack);
   assert(t.name == NULL_TEST.name && t.fn == NULL_TEST.fn);
-  assert(getSize(&stack) == 0);
+  assert(get_size(&stack) == 0);
 
   t = pop(NULL);
   assert(t.name == ERROR_TEST.name && t.fn == ERROR_TEST.fn);
@@ -87,14 +87,14 @@ void check_repeated_peek(void) {
   push(&stack, t2);
   push(&stack, t3);
 
-  int before_count = getSize(&stack);
+  int before_count = get_size(&stack);
   for (int i = 0; i < 10; i++) {
     Test result = peek(&stack);
     assert(result.fn == t3.fn);
     assert(result.name == t3.name);
   }
 
-  assert(before_count == getSize(&stack));
+  assert(before_count == get_size(&stack));
   assert(cleanStack(&stack) == true);
 }
 

@@ -75,10 +75,11 @@ static bool push(Stack *stack, Test test) {
 }
 
 /*
- * Pop test stack in LIFO order
- * If no tests are remaining,
- * then return NULL_TEST sentinel value
- * Returns ERROR_TEST if the stack pointer is NULL
+ * Pop stack of tests in LIFO order
+ *
+ * Returns:
+ * - NULL_TEST: sentinel value if no tests remaining
+ * - ERROR_TEST: if the stack pointer is NULL
  * */
 static Test pop(Stack *stack) {
   if (stack == NULL) {
@@ -124,14 +125,21 @@ static inline Test peek(const Stack *stack) {
   return test;
 }
 
-static inline int getSize(const Stack *stack) { return stack->size; }
+/*
+ * Return no. of elements in stack
+ * */
+static inline int get_size(const Stack *stack) { return stack->size; }
 
+/*
+ * Keep popping elements from stack until it's empty
+ *
+ * */
 static inline bool cleanStack(Stack *stack) {
   if (stack == NULL) {
     fprintf(stderr, "Stack pointer is NULL\n");
     return false;
   }
-  while (getSize(stack) > 0) {
+  while (get_size(stack) > 0) {
     Test t = pop(stack);
     if (t.name == NULL_TEST.name && t.fn == NULL_TEST.fn) {
       return false;
@@ -206,7 +214,7 @@ static int fork_and_run_process(Test t) {
 
 int run_all(void) {
   int failures = 0;
-  const int test_count = getSize(&s);
+  const int test_count = get_size(&s);
   for (;;) {
     Test t = pop(&s);
     if ((t.name == NULL) || (t.fn == NULL)) {
