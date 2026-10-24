@@ -46,6 +46,9 @@ static Stack s = {0};
 
 /*
  * Push a test to the stack
+ * The name must be heap-allocated and exclusively owned by the caller.
+ * Success transfers name ownership to the stack; failure leaves it with
+ * the caller. The function pointer is borrowed.
  * Returns false if op failed, else true
  * */
 static bool push(Stack *stack, Test test) {
@@ -77,6 +80,8 @@ static bool push(Stack *stack, Test test) {
 
 /*
  * Pop stack of tests in LIFO order
+ * Transfers name ownership to the caller, who must free it.
+ * Sentinel names are borrowed and must not be freed.
  *
  * Returns:
  * - NULL_TEST: sentinel value if no tests remaining
@@ -106,6 +111,8 @@ static Test pop(Stack *stack) {
 
 /*
  * Peek into stack and return latest test
+ * Borrows the name until that entry is popped or the stack is cleaned.
+ * The caller must not free the borrowed name.
  *
  * If no test is found then return NULL_TEST
  * Returns ERROR_TEST if the stack pointer is NULL
@@ -133,6 +140,7 @@ static inline int get_size(const Stack *stack) { return stack->size; }
 
 /*
  * Keep popping elements from stack until it's empty
+ * Frees each node and its owned name.
  *
  * */
 static inline bool cleanStack(Stack *stack) {
@@ -148,6 +156,7 @@ static inline bool cleanStack(Stack *stack) {
     if (t.name == ERROR_TEST.name && t.fn == ERROR_TEST.fn) {
       return false;
     }
+    free((void *)t.name);
   }
 
   return true;

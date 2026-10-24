@@ -1,23 +1,67 @@
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+static size_t outstanding_allocations;
+static bool fail_next_allocation;
+
+static void *tracked_malloc(size_t size) {
+  if (fail_next_allocation) {
+    fail_next_allocation = false;
+    errno = ENOMEM;
+    return NULL;
+  }
+  void *ptr = malloc(size);
+  if (ptr != NULL) {
+    outstanding_allocations++;
+  }
+  return ptr;
+}
+
+static void tracked_free(void *ptr) {
+  if (ptr != NULL) {
+    assert(outstanding_allocations > 0);
+    outstanding_allocations--;
+  }
+  free(ptr);
+}
+
+#define malloc tracked_malloc
+#define free tracked_free
 #define PANDU_IMPL
 #include "../pandu.h"
-#include <assert.h>
-#include <string.h>
+#undef malloc
+#undef free
 
 void dummy_test(void) {}
 
+static Test owned_test(const char *name) {
+  size_t size = strlen(name) + 1;
+  char *copy = tracked_malloc(size);
+  assert(copy != NULL);
+  memcpy(copy, name, size);
+  return (Test){.fn = dummy_test, .name = copy};
+}
+
 void check_pop_order(void) {
   Stack stack = {0};
-  Test t1 = {.fn = dummy_test, .name = "test1"};
-  Test t2 = {.fn = dummy_test, .name = "test2"};
-  Test t3 = {.fn = dummy_test, .name = "test3"};
+  Test t1 = owned_test("test1");
+  Test t2 = owned_test("test2");
+  Test t3 = owned_test("test3");
 
   assert(push(&stack, t1));
   assert(push(&stack, t2));
   assert(push(&stack, t3));
 
-  assert(strcmp(pop(&stack).name, "test3") == 0);
-  assert(strcmp(pop(&stack).name, "test2") == 0);
-  assert(strcmp(pop(&stack).name, "test1") == 0);
+  const char *expected[] = {"test3", "test2", "test1"};
+  for (size_t i = 0; i < 3; i++) {
+    Test popped = pop(&stack);
+    assert(strcmp(popped.name, expected[i]) == 0);
+    tracked_free((void *)popped.name);
+  }
+  assert(get_size(&stack) == 0);
 }
 
 void check_null_name_push(void) {
@@ -28,9 +72,9 @@ void check_null_name_push(void) {
 
 void check_peek_decrement(void) {
   Stack stack = {0};
-  Test t1 = {.fn = dummy_test, .name = "test1"};
-  Test t2 = {.fn = dummy_test, .name = "test2"};
-  Test t3 = {.fn = dummy_test, .name = "test3"};
+  Test t1 = owned_test("test1");
+  Test t2 = owned_test("test2");
+  Test t3 = owned_test("test3");
 
   assert(push(&stack, t1));
   assert(push(&stack, t2));
@@ -42,17 +86,18 @@ void check_peek_decrement(void) {
   assert((t.name == t3.name) && (t.fn == t3.fn));
   assert(get_size(&stack) == 3);
 
-  pop(&stack);
-  pop(&stack);
-  pop(&stack);
+  assert(cleanStack(&stack));
 }
 
 void check_push_one(void) {
   Stack stack = {0};
-  Test t = {.fn = dummy_test, .name = "test"};
+  Test t = owned_test("test");
   assert(push(&stack, t) == true);
   assert(get_size(&stack) == 1);
-  pop(&stack);
+  Test popped = pop(&stack);
+  assert(popped.name == t.name);
+  tracked_free((void *)popped.name);
+  assert(get_size(&stack) == 0);
 }
 
 void check_stack_sentinels(void) {
@@ -79,13 +124,13 @@ void check_peek_null_stack(void) {
 
 void check_repeated_peek(void) {
   Stack stack = {0};
-  Test t1 = {.fn = dummy_test, .name = "test1"};
-  Test t2 = {.fn = dummy_test, .name = "test2"};
-  Test t3 = {.fn = dummy_test, .name = "test3"};
+  Test t1 = owned_test("test1");
+  Test t2 = owned_test("test2");
+  Test t3 = owned_test("test3");
 
-  push(&stack, t1);
-  push(&stack, t2);
-  push(&stack, t3);
+  assert(push(&stack, t1));
+  assert(push(&stack, t2));
+  assert(push(&stack, t3));
 
   int before_count = get_size(&stack);
   for (int i = 0; i < 10; i++) {
@@ -96,9 +141,41 @@ void check_repeated_peek(void) {
 
   assert(before_count == get_size(&stack));
   assert(cleanStack(&stack) == true);
+  assert(stack.head == NULL);
+  assert(get_size(&stack) == 0);
+  assert(cleanStack(&stack));
+}
+
+void check_failed_push_ownership(void) {
+  Stack stack = {0};
+  Test t = owned_test("caller-owned");
+  size_t before = outstanding_allocations;
+
+  assert(!push(NULL, t));
+  assert(outstanding_allocations == before);
+  assert(strcmp(t.name, "caller-owned") == 0);
+
+  fail_next_allocation = true;
+  assert(!push(&stack, t));
+  assert(!fail_next_allocation);
+  assert(outstanding_allocations == before);
+  assert(stack.head == NULL && get_size(&stack) == 0);
+  assert(strcmp(t.name, "caller-owned") == 0);
+  tracked_free((void *)t.name);
 }
 
 int main(void) {
+  // Check allocation balance in the parent: child exit can hide leaked names.
+  test_fn checks[] = {check_stack_sentinels, check_pop_order,
+                      check_null_name_push,  check_peek_decrement,
+                      check_push_one,        check_peek_null_stack,
+                      check_repeated_peek,   check_failed_push_ownership};
+  for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); i++) {
+    checks[i]();
+    assert(outstanding_allocations == 0);
+  }
+  assert(!cleanStack(NULL));
+
   if (!register_test(check_stack_sentinels, "check_stack_sentinels")) {
     return 1;
   }
@@ -127,5 +204,12 @@ int main(void) {
     return 1;
   }
 
-  return run_all() != 0;
+  if (!register_test(check_failed_push_ownership,
+                     "check_failed_push_ownership")) {
+    return 1;
+  }
+
+  int failures = run_all();
+  assert(outstanding_allocations == 0);
+  return failures != 0;
 }
