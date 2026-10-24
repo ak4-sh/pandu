@@ -1,6 +1,6 @@
 CC ?= cc
 CPPFLAGS ?=
-CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -g
+CFLAGS ?= -std=c23 -Wall -Wextra -Wpedantic -g
 LDFLAGS ?=
 LDLIBS ?=
 

@@ -6,7 +6,7 @@ It is provided as a single header file.
 
 ## Building and testing
 
-Tests require Make and a C11 compiler on a POSIX system (Linux or macOS).
+Tests require Make and a C23 compiler on a POSIX system (Linux or macOS).
 
 ```sh
 make           # Build all test executables in build/
@@ -19,7 +19,7 @@ or flags so existing executables are rebuilt:
 
 ```sh
 make clean
-make test CC=clang CFLAGS='-std=c11 -Wall -Wextra -O2'
+make test CC=clang CFLAGS='-std=c23 -Wall -Wextra -O2'
 ```
 
 Every `tests/*.c` file is automatically built as a separate executable and run by
