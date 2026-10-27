@@ -17,6 +17,7 @@ int run_all(void);
 #define PANDU_IMPL_INCLUDED
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -138,6 +139,7 @@ static inline Test peek(const Stack *stack) {
  * */
 static inline int get_size(const Stack *stack) { return stack->size; }
 
+int reap_child(pid_t pid, Test t, bool kill_child);
 /*
  * Keep popping elements from stack until it's empty
  * Frees each node and its owned name.
@@ -209,6 +211,10 @@ static int fork_and_run_process(Test t) {
 
   if (pid == 0) {
     // child
+    if (setpgid(0, 0) < 0) {
+      perror("setgpid failed");
+      _exit(1);
+    }
     t.fn();
     fflush(NULL);
     _exit(0);
@@ -216,27 +222,48 @@ static int fork_and_run_process(Test t) {
 
   else {
     // parent
-    int status;
+    if (setpgid(pid, pid)) {
+      if (errno != EACCES && errno != ESRCH) {
+        perror("Parent set gpid failed unexpectedly");
 
-    pid_t waited;
-    do {
-      waited = waitpid(pid, &status, 0);
-    } while (waited == -1 && errno == EINTR);
-
-    if (waited == -1) {
-      perror("Waitpid failed");
-      return -1;
+        (void)reap_child(pid, t, true);
+        return -1;
+      }
     }
 
-    if (WIFEXITED(status)) {
-      return WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-      fprintf(stderr, "Test %s was killed by signal %d\n", t.name,
-              WTERMSIG(status));
-      return -1;
-    }
+    return reap_child(pid, t, false);
   }
   return -1;
+}
+
+int reap_child(pid_t pid, Test t, bool kill_child) {
+  if (kill_child == true) {
+    if (kill(pid, SIGKILL) < 0) {
+      if (errno != ESRCH) {
+        fprintf(stderr, "Failed to kill child\n");
+        return -1;
+      }
+    }
+  }
+  int status;
+  pid_t waited;
+  do {
+    waited = waitpid(pid, &status, 0);
+  } while (waited == -1 && errno == EINTR);
+
+  if (waited == -1) {
+    perror("Waitpid failed");
+    return -1;
+  }
+
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  } else if (WIFSIGNALED(status)) {
+    fprintf(stderr, "Test %s was killed by signal %d\n", t.name,
+            WTERMSIG(status));
+    return -1;
+  }
+  return 0;
 }
 
 int run_all(void) {
