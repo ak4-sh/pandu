@@ -23,6 +23,7 @@ int run_all(void);
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct StackNode {
@@ -35,6 +36,30 @@ typedef struct {
   int size;
 } Stack;
 
+typedef struct {
+  int fd;
+  char *output_buffer;
+  size_t output_used;
+  size_t output_capacity;
+} PipeFd;
+
+typedef struct {
+  pid_t *groups;
+  pid_t *child_id;
+  const char **names;
+  struct timespec *deadlines;
+
+  PipeFd *stdout_fds;
+  PipeFd *stderr_fds;
+  PipeFd *stdin_fds;
+
+  bool *exited;
+  bool *timed_out;
+  int *wait_status;
+
+  size_t count;
+} Children;
+
 static char PASS_PREFIX[] = "\033[32mPASSED\033[0m";
 static char FAIL_PREFIX[] = "\033[31mFAILED\033[0m";
 static char YELLOW_CODE[] = "\033[1;33m";
@@ -44,6 +69,7 @@ static const Test NULL_TEST = {.name = NULL, .fn = NULL};
 static const Test ERROR_TEST = {.name = "ERROR", .fn = NULL};
 
 static Stack s = {0};
+static Children running_children = {0};
 
 /*
  * Push a test to the stack
@@ -266,9 +292,102 @@ int reap_child(pid_t pid, Test t, bool kill_child) {
   return 0;
 }
 
+void bulk_free_children_state(Children *temp) {
+  for (size_t i = 0; i < temp->count; i++) {
+    if (temp->stdout_fds != NULL)
+      free(temp->stdout_fds[i].output_buffer);
+    if (temp->stderr_fds != NULL)
+      free(temp->stderr_fds[i].output_buffer);
+    if (temp->stdin_fds != NULL)
+      free(temp->stdin_fds[i].output_buffer);
+  }
+  free(temp->groups);
+  free(temp->child_id);
+  free(temp->names);
+  free(temp->deadlines);
+  free(temp->stdout_fds);
+  free(temp->stdin_fds);
+  free(temp->stderr_fds);
+  free(temp->exited);
+  free(temp->timed_out);
+  free(temp->wait_status);
+  *temp = (Children){0};
+}
+
+int initialise_children(const int test_count) {
+  if (test_count <= 0) {
+    fprintf(stderr, "Nothing to run, 0 test count\n");
+    return -1;
+  }
+  Children temp = {
+      .count = (size_t)test_count,
+      .groups = malloc((size_t)test_count * sizeof *running_children.groups),
+      .child_id =
+          malloc((size_t)test_count * sizeof *running_children.child_id),
+      .names = malloc((size_t)test_count * sizeof *running_children.names),
+      .deadlines =
+          malloc((size_t)test_count * sizeof *running_children.deadlines),
+      .stdout_fds =
+          malloc((size_t)test_count * sizeof *running_children.stdout_fds),
+      .stderr_fds =
+          malloc((size_t)test_count * sizeof *running_children.stderr_fds),
+      .stdin_fds =
+          malloc((size_t)test_count * sizeof *running_children.stdin_fds),
+      .exited = malloc((size_t)test_count * sizeof *running_children.exited),
+      .timed_out =
+          malloc((size_t)test_count * sizeof *running_children.timed_out),
+      .wait_status =
+          malloc((size_t)test_count * sizeof *running_children.wait_status),
+
+  };
+
+  // Initialize every available stream array before cleanup can inspect it.
+  for (size_t i = 0; i < temp.count; i++) {
+    if (temp.stdout_fds != NULL)
+      temp.stdout_fds[i] = (PipeFd){.fd = -1};
+    if (temp.stderr_fds != NULL)
+      temp.stderr_fds[i] = (PipeFd){.fd = -1};
+    if (temp.stdin_fds != NULL)
+      temp.stdin_fds[i] = (PipeFd){.fd = -1};
+  }
+
+  if (temp.groups == NULL || temp.child_id == NULL || temp.names == NULL ||
+      temp.deadlines == NULL || temp.stdout_fds == NULL ||
+      temp.stderr_fds == NULL || temp.stdin_fds == NULL ||
+      temp.exited == NULL || temp.timed_out == NULL ||
+      temp.wait_status == NULL) {
+    fprintf(stderr, "Malloc error while trying to intiliase children state\n");
+    bulk_free_children_state(&temp);
+    return -1;
+  }
+
+  for (size_t i = 0; i < temp.count; i++) {
+    const size_t capacity = 4096;
+    temp.stdout_fds[i].output_buffer = malloc(capacity);
+    temp.stderr_fds[i].output_buffer = malloc(capacity);
+    if (temp.stdout_fds[i].output_buffer == NULL ||
+        temp.stderr_fds[i].output_buffer == NULL) {
+      fprintf(stderr, "Failed to allocate child output buffers\n");
+      bulk_free_children_state(&temp);
+      return -1;
+    }
+    temp.stdout_fds[i].output_capacity = capacity;
+    temp.stderr_fds[i].output_capacity = capacity;
+  }
+
+  running_children = temp;
+
+  return 0;
+}
+
 int run_all(void) {
   int failures = 0;
   const int test_count = get_size(&s);
+  if (initialise_children(test_count) < 0) {
+    fprintf(stderr, "initialise_children failed\n");
+    return -1;
+  }
+
   for (;;) {
     Test t = pop(&s);
     if ((t.name == NULL) || (t.fn == NULL)) {
@@ -286,6 +405,7 @@ int run_all(void) {
     free((void *)t.name);
   }
   printf("%d tests run, %d failed\n", test_count, failures);
+  bulk_free_children_state(&running_children);
   return failures;
 }
 
