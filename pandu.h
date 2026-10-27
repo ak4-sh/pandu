@@ -17,6 +17,7 @@ int run_all(void);
 #define PANDU_IMPL_INCLUDED
 
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -226,38 +227,177 @@ bool register_test(test_fn fn, const char *name) {
   return true;
 }
 
-static int fork_and_run_process(Test t) {
+// Returns bytes read and forwarded to stdout, 0 for EOF, or -1 on error.
+ssize_t read_child_pipe(PipeFd *stream) {
+  ssize_t n;
+  do {
+    n = read(stream->fd, stream->output_buffer, stream->output_capacity);
+  } while (n == -1 && errno == EINTR);
+
+  if (n == -1) {
+    fprintf(stderr, "Error while reading from pipe\n");
+    return -1;
+  } else if (n == 0) {
+    return 0;
+  } else {
+    // we did have some data
+    fwrite(stream->output_buffer, 1, (size_t)n, stdout);
+  }
+  return n;
+}
+
+static void close_child_pipes(size_t i) {
+  PipeFd *streams[] = {&running_children.stdout_fds[i],
+                      &running_children.stderr_fds[i]};
+  for (size_t j = 0; j < 2; j++) {
+    if (streams[j]->fd != -1) {
+      close(streams[j]->fd);
+      streams[j]->fd = -1;
+    }
+  }
+}
+
+static int fork_and_run_process(Test t, int i) {
   fflush(NULL);
+  int stdout_fds[2];
+  int stderr_fds[2];
+  // idx 0 for read end, idx 1 for write end
+  if (pipe(stdout_fds) == -1) {
+    return -1;
+  }
+  if (pipe(stderr_fds) == -1) {
+    close(stdout_fds[0]);
+    close(stdout_fds[1]);
+    return -1;
+  }
   pid_t pid = fork();
 
   if (pid < 0) {
+    close(stdout_fds[0]);
+    close(stdout_fds[1]);
+    close(stderr_fds[0]);
+    close(stderr_fds[1]);
     perror("Fork failed");
     return -1;
   }
 
   if (pid == 0) {
-    // child
+    // Child keeps the write ends of its output pipes.
+    close(stdout_fds[0]);
+    close(stderr_fds[0]);
     if (setpgid(0, 0) < 0) {
       perror("setgpid failed");
+      close(stdout_fds[1]);
+      close(stderr_fds[1]);
       _exit(1);
     }
+
+    if (dup2(stdout_fds[1], STDOUT_FILENO) == -1) {
+      fprintf(stderr, "dup2 failed for STDOUT\n");
+      close(stdout_fds[1]);
+      close(stderr_fds[1]);
+      _exit(1);
+    }
+
+    if (dup2(stderr_fds[1], STDERR_FILENO) == -1) {
+      fprintf(stderr, "dup2 failed for STDERR\n");
+      close(stdout_fds[1]);
+      close(stderr_fds[1]);
+      _exit(1);
+    }
+
+    if (stdout_fds[1] != STDOUT_FILENO)
+      close(stdout_fds[1]);
+    if (stderr_fds[1] != STDERR_FILENO)
+      close(stderr_fds[1]);
+
     t.fn();
     fflush(NULL);
     _exit(0);
   }
 
   else {
-    // parent
+    // Parent keeps the read ends of the output pipes.
+    close(stdout_fds[1]);
+    close(stderr_fds[1]);
+    running_children.stderr_fds[i].fd = stderr_fds[0];
+    running_children.stdout_fds[i].fd = stdout_fds[0];
+
     if (setpgid(pid, pid)) {
       if (errno != EACCES && errno != ESRCH) {
         perror("Parent set gpid failed unexpectedly");
 
-        (void)reap_child(pid, t, true);
-        return -1;
+        goto child_failure;
+      }
+    }
+
+    // poll the pipes
+    struct pollfd fds[] = {
+        {.fd = stdout_fds[0], .events = POLLIN},
+        {.fd = stderr_fds[0], .events = POLLIN},
+    };
+
+    while (fds[0].fd != -1 || fds[1].fd != -1) {
+
+      // poll indefinitely
+      int ready;
+      do {
+        ready = poll(fds, 2, -1);
+      } while (ready == -1 && errno == EINTR);
+
+      if (ready == -1) {
+        fprintf(stderr, "Error in polling\n");
+        goto child_failure;
+      }
+
+      if (fds[0].revents) {
+        if (fds[0].revents & (POLLERR | POLLNVAL)) {
+          goto child_failure;
+        }
+        if (fds[0].revents & (POLLIN | POLLHUP)) {
+          // STDOUT has some data, we need to read
+          PipeFd *stream = &running_children.stdout_fds[i];
+          ssize_t res = read_child_pipe(stream);
+          if (res == 0) {
+            // EOF reached
+            close(stream->fd);
+            stream->fd = -1;
+            fds[0].fd = -1;
+          }
+          if (res == -1) {
+            fprintf(stderr, "Failed to read data from child\n");
+            goto child_failure;
+          }
+        }
+      }
+      if (fds[1].revents) {
+        if (fds[1].revents & (POLLERR | POLLNVAL)) {
+          goto child_failure;
+        }
+        if (fds[1].revents & (POLLIN | POLLHUP)) {
+
+          PipeFd *stream = &running_children.stderr_fds[i];
+          ssize_t res = read_child_pipe(stream);
+          if (res == 0) {
+            // EOF reached
+            close(stream->fd);
+            stream->fd = -1;
+            fds[1].fd = -1;
+          }
+          if (res == -1) {
+            fprintf(stderr, "Failed to read data from child\n");
+            goto child_failure;
+          }
+        }
       }
     }
 
     return reap_child(pid, t, false);
+
+  child_failure:
+    close_child_pipes((size_t)i);
+    (void)reap_child(pid, t, true);
+    return -1;
   }
   return -1;
 }
@@ -382,6 +522,7 @@ int initialise_children(const int test_count) {
 
 int run_all(void) {
   int failures = 0;
+  int i = 0;
   const int test_count = get_size(&s);
   if (initialise_children(test_count) < 0) {
     fprintf(stderr, "initialise_children failed\n");
@@ -394,7 +535,8 @@ int run_all(void) {
       break;
     }
 
-    int result = fork_and_run_process(t);
+    int result = fork_and_run_process(t, i);
+    i++;
     if (result != 0) {
       printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, FAIL_PREFIX);
       failures++;

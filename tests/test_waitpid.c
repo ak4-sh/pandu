@@ -20,10 +20,12 @@ static void failing_test(void) {
 
 static void check_interrupted_wait(test_fn fn, int expected) {
   interrupts = 0;
+  assert(initialise_children(1) == 0);
   alarm(1);
   Test test = {.name = "interrupted_wait", .fn = fn};
-  int result = fork_and_run_process(test);
+  int result = fork_and_run_process(test, 0);
   alarm(0);
+  bulk_free_children_state(&running_children);
 
   assert(interrupts > 0);
   assert(result == expected);
