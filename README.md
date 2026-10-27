@@ -10,6 +10,13 @@ Tests require Make and a C23 compiler on a POSIX system (Linux or macOS).
 The Makefile uses `-std=c23` when supported and falls back to the older
 `-std=c2x` spelling otherwise.
 
+Pandu's implementation uses POSIX APIs, including `kill()`. The Makefile adds
+`-D_POSIX_C_SOURCE=200809L` to `CPPFLAGS` to expose their declarations in strict C
+mode on Linux. If you override `CPPFLAGS` on the Make command line or use your
+own build, include this definition in your compiler flags, or define
+`_POSIX_C_SOURCE` as `200809L`
+before any headers in the source file that defines `PANDU_IMPL`.
+
 ```sh
 make           # Build all test executables in build/
 make test      # Build and run all tests

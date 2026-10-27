@@ -1,5 +1,5 @@
 CC ?= cc
-CPPFLAGS ?=
+CPPFLAGS += -D_POSIX_C_SOURCE=200809L
 # Older compilers use the draft name for C23.
 CSTD ?= $(shell $(CC) -std=c23 -E -x c /dev/null >/dev/null 2>&1 && echo c23 || echo c2x)
 CFLAGS ?= -std=$(CSTD) -Wall -Wextra -Wpedantic -g
