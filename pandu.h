@@ -227,8 +227,8 @@ bool register_test(test_fn fn, const char *name) {
   return true;
 }
 
-// Returns bytes read and forwarded to stdout, 0 for EOF, or -1 on error.
-ssize_t read_child_pipe(PipeFd *stream) {
+// Returns bytes forwarded to destination, 0 for EOF, or -1 on error.
+ssize_t read_child_pipe(PipeFd *stream, FILE *destination) {
   ssize_t n;
   do {
     n = read(stream->fd, stream->output_buffer, stream->output_capacity);
@@ -241,14 +241,18 @@ ssize_t read_child_pipe(PipeFd *stream) {
     return 0;
   } else {
     // we did have some data
-    fwrite(stream->output_buffer, 1, (size_t)n, stdout);
+    if (fwrite(stream->output_buffer, 1, (size_t)n, destination) != (size_t)n ||
+        fflush(destination) == EOF) {
+      fprintf(stderr, "Failed to forward child output\n");
+      return -1;
+    }
   }
   return n;
 }
 
 static void close_child_pipes(size_t i) {
   PipeFd *streams[] = {&running_children.stdout_fds[i],
-                      &running_children.stderr_fds[i]};
+                       &running_children.stderr_fds[i]};
   for (size_t j = 0; j < 2; j++) {
     if (streams[j]->fd != -1) {
       close(streams[j]->fd);
@@ -357,7 +361,7 @@ static int fork_and_run_process(Test t, int i) {
         if (fds[0].revents & (POLLIN | POLLHUP)) {
           // STDOUT has some data, we need to read
           PipeFd *stream = &running_children.stdout_fds[i];
-          ssize_t res = read_child_pipe(stream);
+          ssize_t res = read_child_pipe(stream, stdout);
           if (res == 0) {
             // EOF reached
             close(stream->fd);
@@ -377,7 +381,7 @@ static int fork_and_run_process(Test t, int i) {
         if (fds[1].revents & (POLLIN | POLLHUP)) {
 
           PipeFd *stream = &running_children.stderr_fds[i];
-          ssize_t res = read_child_pipe(stream);
+          ssize_t res = read_child_pipe(stream, stderr);
           if (res == 0) {
             // EOF reached
             close(stream->fd);
@@ -537,16 +541,21 @@ int run_all(void) {
 
     int result = fork_and_run_process(t, i);
     i++;
+    const char *display_name = t.name[0] == '\0' ? "<unnamed>" : t.name;
     if (result != 0) {
-      printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, FAIL_PREFIX);
+      printf("%s%s%s: %s\n", YELLOW_CODE, display_name, RESET_TERM,
+             FAIL_PREFIX);
       failures++;
     } else {
-      printf("%s%s%s: %s\n", YELLOW_CODE, t.name, RESET_TERM, PASS_PREFIX);
+      printf("%s%s%s: %s\n", YELLOW_CODE, display_name, RESET_TERM,
+             PASS_PREFIX);
     }
+    fflush(stdout);
 
     free((void *)t.name);
   }
-  printf("%d tests run, %d failed\n", test_count, failures);
+  printf("%d tests run, %d failed\n\n", test_count, failures);
+  fflush(stdout);
   bulk_free_children_state(&running_children);
   return failures;
 }

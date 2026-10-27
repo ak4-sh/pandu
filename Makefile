@@ -13,7 +13,7 @@ TEST_BINARIES := $(patsubst tests/%.c,build/%,$(TEST_SOURCES))
 
 all: $(TEST_BINARIES)
 
-build/%: tests/%.c pandu.h | build
+build/%: tests/%.c pandu.h $(wildcard tests/*.h) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< $(LDFLAGS) $(LDLIBS) -o $@
 
 build:

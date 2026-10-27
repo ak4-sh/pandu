@@ -34,6 +34,7 @@ static void tracked_free(void *ptr) {
 #include "../pandu.h"
 #undef malloc
 #undef free
+#include "test_output.h"
 
 void dummy_test(void) {}
 
@@ -67,7 +68,9 @@ void check_pop_order(void) {
 void check_null_name_push(void) {
   Stack stack = {0};
   Test t = {.fn = dummy_test, .name = NULL};
+  OutputCapture errors = capture_output(STDERR_FILENO);
   assert(push(&stack, t) == false);
+  expect_output(errors, "Test name is NULL\n");
 }
 
 void check_peek_decrement(void) {
@@ -109,9 +112,11 @@ void check_stack_sentinels(void) {
   assert(t.name == NULL_TEST.name && t.fn == NULL_TEST.fn);
   assert(get_size(&stack) == 0);
 
+  OutputCapture errors = capture_output(STDERR_FILENO);
   t = pop(NULL);
   assert(t.name == ERROR_TEST.name && t.fn == ERROR_TEST.fn);
   t = peek(NULL);
+  expect_output(errors, "Stack pointer is NULL\nStack pointer is NULL\n");
   assert(t.name == ERROR_TEST.name && t.fn == ERROR_TEST.fn);
   assert(ERROR_TEST.name != NULL_TEST.name);
 }
@@ -151,12 +156,18 @@ void check_failed_push_ownership(void) {
   Test t = owned_test("caller-owned");
   size_t before = outstanding_allocations;
 
+  OutputCapture errors = capture_output(STDERR_FILENO);
   assert(!push(NULL, t));
+  expect_output(errors, "Stack pointer is NULL\n");
   assert(outstanding_allocations == before);
   assert(strcmp(t.name, "caller-owned") == 0);
 
   fail_next_allocation = true;
+  errors = capture_output(STDERR_FILENO);
   assert(!push(&stack, t));
+  char expected[256];
+  snprintf(expected, sizeof expected, "malloc: %s\n", strerror(ENOMEM));
+  expect_output(errors, expected);
   assert(!fail_next_allocation);
   assert(outstanding_allocations == before);
   assert(stack.head == NULL && get_size(&stack) == 0);
@@ -174,7 +185,9 @@ int main(void) {
     checks[i]();
     assert(outstanding_allocations == 0);
   }
+  OutputCapture errors = capture_output(STDERR_FILENO);
   assert(!cleanStack(NULL));
+  expect_output(errors, "Stack pointer is NULL\n");
 
   if (!register_test(check_stack_sentinels, "check_stack_sentinels")) {
     return 1;

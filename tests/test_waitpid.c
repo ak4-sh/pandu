@@ -45,6 +45,6 @@ int main(void) {
 
   check_interrupted_wait(passing_test, 0);
   check_interrupted_wait(failing_test, 7);
-  printf("2 waitpid tests run, 0 failed\n");
+  printf("\n2 waitpid tests run, 0 failed\n");
   return 0;
 }

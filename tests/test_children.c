@@ -32,6 +32,7 @@ static void checked_free(void *ptr) {
 #include "../pandu.h"
 #undef malloc
 #undef free
+#include "test_output.h"
 
 int main(void) {
   assert(initialise_children(3) == 0);
@@ -39,7 +40,7 @@ int main(void) {
   assert(running_children.count == 3);
   for (size_t i = 0; i < running_children.count; i++) {
     PipeFd *streams[] = {&running_children.stdout_fds[i],
-                        &running_children.stderr_fds[i]};
+                         &running_children.stderr_fds[i]};
     for (size_t j = 0; j < 2; j++) {
       assert(streams[j]->fd == -1);
       assert(streams[j]->output_buffer != NULL);
@@ -63,13 +64,18 @@ int main(void) {
     allocation_calls = 0;
     fail_at = failure;
     running_children.count = 99;
+    OutputCapture errors = capture_output(STDERR_FILENO);
     assert(initialise_children(3) == -1);
+    expect_output(
+        errors, failure <= total_calls - 6
+                    ? "Malloc error while trying to intiliase children state\n"
+                    : "Failed to allocate child output buffers\n");
     assert(outstanding == 0);
     assert(running_children.count == 99);
     assert(running_children.stdout_fds == NULL);
     assert(running_children.stderr_fds == NULL);
   }
   running_children = (Children){0};
-  puts("Child buffer initialization and allocation failure checks passed");
+  puts("\nChild buffer initialization and allocation failure checks passed\n");
   return 0;
 }
