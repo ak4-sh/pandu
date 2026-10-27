@@ -1,21 +1,52 @@
 # Pandu
 
-Pandu is a general purpose testing framework written for C projects. 
+Pandu is a single-header testing framework for C projects on POSIX systems
+(Linux or macOS). Each test runs in a separate child process.
 
-It is provided as a single header file. 
+## Quick start
+
+Copy `pandu.h` into your project. Define `PANDU_IMPL` in exactly one source file
+per executable. Save this example as `example.c` alongside the header:
+
+```c
+#define PANDU_IMPL
+#include "pandu.h"
+#include <assert.h>
+
+static void test_addition(void) {
+  assert(2 + 2 == 4);
+}
+
+int main(void) {
+  if (!register_test(test_addition, "addition")) {
+    return 1;
+  }
+  return run_all() != 0;
+}
+```
+
+Build and run with a C23 compiler:
+
+```sh
+cc -std=c23 -D_POSIX_C_SOURCE=200809L -Wall -Wextra example.c -o example
+./example
+```
+
+Use `-std=c2x` if your compiler uses the older spelling for C23. Keep assertions
+enabled when using `assert()` for test checks.
+
+Tests run sequentially in reverse registration order. Their stdout and stderr
+are forwarded, and Pandu prints a pass/fail result and a final summary.
+`run_all()` returns the number of failed tests, or `-1` if initialization fails.
+Timeout enforcement is not yet implemented; a hanging test can block the suite.
 
 ## Building and testing
 
-Tests require Make and a C23 compiler on a POSIX system (Linux or macOS).
-The Makefile uses `-std=c23` when supported and falls back to the older
-`-std=c2x` spelling otherwise.
+Working on Pandu itself requires Make and a C23 compiler. The Makefile selects
+`-std=c23` or falls back to `-std=c2x` automatically.
 
-Pandu's implementation uses POSIX APIs, including `kill()`. The Makefile adds
-`-D_POSIX_C_SOURCE=200809L` to `CPPFLAGS` to expose their declarations in strict C
-mode on Linux. If you override `CPPFLAGS` on the Make command line or use your
-own build, include this definition in your compiler flags, or define
-`_POSIX_C_SOURCE` as `200809L`
-before any headers in the source file that defines `PANDU_IMPL`.
+The Makefile also adds `-D_POSIX_C_SOURCE=200809L` to `CPPFLAGS` for POSIX API
+declarations. Preserve this definition if you override `CPPFLAGS`.
 
 ```sh
 make           # Build all test executables in build/
@@ -28,14 +59,13 @@ or flags so existing executables are rebuilt:
 
 ```sh
 make clean
-make test CC=clang CFLAGS='-std=c23 -Wall -Wextra -O2'
+make test CC=clang
 ```
 
-Every `tests/*.c` file is automatically built as a separate executable and run by
-`make test`. Each file must define `PANDU_IMPL` before including `pandu.h`, provide
-its own `main()`, check test registration succeeds, and return a nonzero status
-when tests fail (for example, `return run_all() != 0;`). Assertions remain enabled
-in test builds, including when compiler flags define `NDEBUG`.
+Every `tests/*.c` file is built as a separate executable with its own `main()`.
+New suites using Pandu should follow the quick-start pattern, checking registration
+and returning a nonzero status on failure. The Makefile keeps assertions enabled,
+even when compiler flags define `NDEBUG`.
 
 All test executables run even if one fails, and `make test` fails if any executable
 fails. GitHub Actions runs the same command with GCC and Clang on Ubuntu for
@@ -49,11 +79,7 @@ Enable the repository's hooks once per checkout:
 git config --local core.hooksPath .githooks
 ```
 
-Before each commit, the hook rebuilds and runs all tests with `make -B test`.
-A build or test failure blocks the commit. It tests the current working tree,
-including unstaged changes; stage the changes you intend to commit.
-
-Before each push, the pre-push hook also rebuilds and runs all tests with
-`make -B test`. A build or test failure blocks the push. It tests the current
-working tree, including uncommitted changes.
+The pre-commit and pre-push hooks run `make -B test`; a build or test failure
+blocks the operation. Both test the current working tree, including unstaged
+and uncommitted changes.
 
