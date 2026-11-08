@@ -70,6 +70,8 @@ static const Test NULL_TEST = {.name = NULL, .fn = NULL};
 static const Test ERROR_TEST = {.name = "ERROR", .fn = NULL};
 
 static Stack s = {0};
+static int TIMEOUT = 600;
+int custom_timeout = 0;
 static Children running_children = {0};
 
 /*
@@ -404,6 +406,17 @@ static int fork_and_run_process(Test t, int i) {
     return -1;
   }
   return -1;
+}
+
+/*
+ * Specify a global timeout value in seconds
+ * */
+int set_timeout(int timeout) {
+  if (timeout == 0) {
+    fprintf(stderr, "Can't accept 0 value for test timeout\n");
+  }
+  custom_timeout = timeout;
+  return 0;
 }
 
 int reap_child(pid_t pid, Test t, bool kill_child) {
